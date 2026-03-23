@@ -81,3 +81,25 @@ tr:nth-child(even) {
     margin-top: 0;
     text-align: center;
 }
+.totals-breakdown {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 12px;
+}
+#total-ventas, #total-compras {
+    font-size: 1.08em;
+    font-weight: 600;
+    color: #fff;
+    margin: 2px 0;
+    text-align: center;
+}
+#total-ventas b {
+    color: #2ecc71;
+}
+#total-compras b {
+    color: #e74c3c;
+}
+#total-compras {
+    color: #fff;
+}
