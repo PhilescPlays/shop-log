@@ -1,38 +1,17 @@
-document.getElementById('logFile').addEventListener('change', function(event) {
+document.getElementById('logFile').addEventListener('change', async function(event) {
     const file = event.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const text = e.target.result;
-        const lines = text.split('\n');
-        const sales = [];
-        let total = 0;
-        const regexVenta = /Has vendido (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
-        const regexCompra = /Has comprado (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
-        lines.forEach(line => {
-            let match = line.match(regexVenta);
-            if (match) {
-                const cantidad = parseInt(match[1], 10);
-                const item = match[2];
-                const valorStr = match[3].replace(/\./g, '').replace(',', '.');
-                const valor = parseFloat(valorStr);
-                sales.push({ tipo: 'Venta', cantidad, item, valor });
-                total += valor;
-                return;
-            }
-            match = line.match(regexCompra);
-            if (match) {
-                const cantidad = parseInt(match[1], 10);
-                const item = match[2];
-                const valorStr = match[3].replace(/\./g, '').replace(',', '.');
-                const valor = parseFloat(valorStr);
-                sales.push({ tipo: 'Compra', cantidad, item, valor });
-                total -= valor;
-            }
-        });
-        mostrarResultados(sales, total);
-    };
-    reader.readAsText(file);
+    let text;
+    if (file.name.endsWith('.gz')) {
+        // Decompress .gz file using DecompressionStream
+        const ds = new DecompressionStream('gzip');
+        const decompressedStream = file.stream().pipeThrough(ds);
+        const decompressedBlob = await new Response(decompressedStream).blob();
+        text = await decompressedBlob.text();
+    } else {
+        text = await file.text();
+    }
+    procesarTextoLog(text);
 });
 
 document.querySelector('.custom-file-upload').addEventListener('click', function(e) {
