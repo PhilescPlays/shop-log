@@ -1,9 +1,7 @@
-document.getElementById('logFile').addEventListener('change', async function(event) {
-    const file = event.target.files[0];
+async function processFile(file) {
     if (!file) return;
     let text;
     if (file.name.endsWith('.gz')) {
-        // Decompress .gz file using DecompressionStream
         const ds = new DecompressionStream('gzip');
         const decompressedStream = file.stream().pipeThrough(ds);
         const decompressedBlob = await new Response(decompressedStream).blob();
@@ -11,12 +9,38 @@ document.getElementById('logFile').addEventListener('change', async function(eve
     } else {
         text = await file.text();
     }
-    procesarTextoLog(text);
+    procesarTextoLog(text, file.name);
+}
+
+document.getElementById('logFile').addEventListener('change', function(event) {
+    processFile(event.target.files[0]);
 });
 
 document.querySelector('.custom-file-upload').addEventListener('click', function(e) {
-    e.preventDefault(); // Prevent default label click behavior
+    e.preventDefault();
     document.getElementById('logFile').click();
+});
+
+// Drag and drop support (whole page)
+document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    document.body.classList.add('drag-over');
+});
+
+document.addEventListener('dragleave', function(e) {
+    // Only remove class when leaving the page entirely
+    if (e.relatedTarget === null) {
+        document.body.classList.remove('drag-over');
+    }
+});
+
+document.addEventListener('drop', function(e) {
+    e.preventDefault();
+    document.body.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+        processFile(file);
+    }
 });
 
 document.addEventListener('paste', function(e) {
@@ -28,7 +52,7 @@ document.addEventListener('paste', function(e) {
     }
 });
 
-function procesarTextoLog(text) {
+function procesarTextoLog(text, fileName) {
     const lines = text.split('\n');
     const sales = [];
     let total = 0;
@@ -55,10 +79,10 @@ function procesarTextoLog(text) {
             total -= valor;
         }
     });
-    mostrarResultados(sales, total);
+    mostrarResultados(sales, total, fileName);
 }
 
-function mostrarResultados(sales, total) {
+function mostrarResultados(sales, total, fileName) {
     if (sales.length === 0) {
         document.getElementById('results').innerHTML = '<p>No se encontraron ventas ni compras en el archivo.</p>';
         return;
@@ -66,11 +90,33 @@ function mostrarResultados(sales, total) {
     // Calcular totales separados
     const totalVentas = sales.filter(s => s.tipo === 'Venta').reduce((acc, s) => acc + s.valor, 0);
     const totalCompras = sales.filter(s => s.tipo === 'Compra').reduce((acc, s) => acc + s.valor, 0);
+    // Check for split query parameter (percentage, comma-separated for multiple)
+    const urlParams = new URLSearchParams(window.location.search);
+    const splitRaw = urlParams.get('split');
+    const splits = splitRaw
+        ? splitRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0 && n <= 100)
+        : [];
+    const hasSplit = splits.length > 0;
+    const totalSplitAmount = splits.reduce((acc, pct) => acc + (total * pct / 100), 0);
+    const totalAfterSplit = hasSplit ? (total - totalSplitAmount) : total;
     let html = '';
-    html += `<div id="total">Total: $${total.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+    
+    html += `<div id="total">Total: $${totalAfterSplit.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     if (totalVentas > 0 && totalCompras > 0) {
         html += `<div class="totals-breakdown"><div id="total-ventas"><b>Total ventas:</b> $${totalVentas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
-        html += `<div id="total-compras"><b>Total compras:</b> -$${totalCompras.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div></div>`;
+        html += `<div id="total-compras"><b>Total compras:</b> -$${totalCompras.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+    }
+    if (hasSplit) {
+        if (!(totalVentas > 0 && totalCompras > 0)) {
+            html += `<div class="totals-breakdown">`;
+        }
+        splits.forEach(pct => {
+            const amount = total * pct / 100;
+            html += `<div class="total-split"><b>Comisión (${pct}%):</b> -$${amount.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+        });
+    }
+    if (totalVentas > 0 && totalCompras > 0 || hasSplit) {
+        html += `</div>`;
     }
     // Combinar transacciones por tipo+item y guardar detalles
     const combined = {};
@@ -83,6 +129,9 @@ function mostrarResultados(sales, total) {
         combined[key].valor += sale.valor;
         combined[key].detalles.push({ ...sale });
     });
+    if (fileName) {
+        html += `<div class="file-name">📄 ${fileName}</div>`;
+    }
     html += '<table id="results-table"><tr><th>Tipo</th><th>Objeto</th><th id="cantidad-header">Cantidad</th><th>Valor</th></tr>';
     let rowIdx = 0;
     Object.entries(combined).forEach(([key, sale]) => {
