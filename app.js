@@ -99,9 +99,10 @@ function mostrarResultados(sales, total, fileName) {
     const hasSplit = splits.length > 0;
     const totalSplitAmount = splits.reduce((acc, pct) => acc + (total * pct / 100), 0);
     const totalAfterSplit = hasSplit ? (total - totalSplitAmount) : total;
+    const hasCustomSplit = urlParams.get('customSplit') === 'true';
     let html = '';
     
-    html += `<div id="total">Total: $${totalAfterSplit.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+    html += `<div id="total" data-base-total="${totalAfterSplit}">Total: $${totalAfterSplit.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     if (totalVentas > 0 && totalCompras > 0) {
         html += `<div class="totals-breakdown"><div id="total-ventas"><b>Total ventas:</b> $${totalVentas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
         html += `<div id="total-compras"><b>Total compras:</b> -$${totalCompras.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
@@ -117,6 +118,16 @@ function mostrarResultados(sales, total, fileName) {
     }
     if (totalVentas > 0 && totalCompras > 0 || hasSplit) {
         html += `</div>`;
+    }
+    if (hasCustomSplit) {
+        html += `<div class="custom-split-container">
+            <label for="customSplitInput"><b>Comisión personalizada ($):</b></label>
+            <div class="custom-split-input-wrap">
+                <button type="button" id="customSplitDown" class="custom-split-btn">▲</button>
+                <input type="number" id="customSplitInput" placeholder="0.00" step="10000" max="0" value="0">
+                <button type="button" id="customSplitUp" class="custom-split-btn">▼</button>
+            </div>
+        </div>`;
     }
     // Combinar transacciones por tipo+item y guardar detalles
     const combined = {};
@@ -198,4 +209,31 @@ function mostrarResultados(sales, total, fileName) {
             }
         });
     });
+    // Add custom split handler
+    if (hasCustomSplit) {
+        const customInput = document.getElementById('customSplitInput');
+        function updateCustomTotal() {
+            let customAmount = parseFloat(customInput.value) || 0;
+            if (customAmount > 0) {
+                customAmount = 0;
+                customInput.value = 0;
+            }
+            const baseTotal = parseFloat(document.getElementById('total').getAttribute('data-base-total'));
+            const newTotal = baseTotal + customAmount;
+            document.getElementById('total').textContent = `Total: $${newTotal.toLocaleString('es-ES', {minimumFractionDigits: 2})}`;
+        }
+        customInput.addEventListener('input', updateCustomTotal);
+        // ▲ button subtracts 10K (more negative)
+        document.getElementById('customSplitDown').addEventListener('click', function() {
+            customInput.value = (parseFloat(customInput.value) || 0) - 10000;
+            updateCustomTotal();
+        });
+        // ▼ button adds 10K (less negative, capped at 0)
+        document.getElementById('customSplitUp').addEventListener('click', function() {
+            let newVal = (parseFloat(customInput.value) || 0) + 10000;
+            if (newVal > 0) newVal = 0;
+            customInput.value = newVal;
+            updateCustomTotal();
+        });
+    }
 }

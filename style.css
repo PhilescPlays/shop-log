@@ -113,7 +113,7 @@ tr:nth-child(even) {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 4px;
 }
 #total-ventas, #total-compras {
     font-size: 1.08em;
@@ -140,6 +140,63 @@ tr:nth-child(even) {
 }
 .total-split b {
     color: #f39c12;
+}
+/* Custom Split Input */
+.custom-split-container {
+    text-align: center;
+    margin: 2px 0 12px 0;
+}
+.custom-split-container label {
+    display: block;
+    color: #f39c12;
+    font-size: 1.05em;
+    margin-bottom: 6px;
+}
+.custom-split-container input {
+    width: 160px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1.5px solid rgba(243, 156, 18, 0.4);
+    background: rgba(40, 44, 52, 0.95);
+    color: #fff;
+    font-size: 1.05em;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.custom-split-container input::-webkit-inner-spin-button,
+.custom-split-container input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.custom-split-container input:focus {
+    border-color: #f39c12;
+}
+.custom-split-input-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.custom-split-btn {
+    width: 34px;
+    height: 34px;
+    border: 1.5px solid rgba(243, 156, 18, 0.4);
+    border-radius: 8px;
+    background: rgba(243, 156, 18, 0.12);
+    color: #f39c12;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.custom-split-btn:hover {
+    background: rgba(243, 156, 18, 0.25);
+    border-color: #f39c12;
 }
 
 /* Toggle Switch Styles */
