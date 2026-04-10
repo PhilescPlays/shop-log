@@ -238,3 +238,32 @@ tr:nth-child(even) {
 .toggle-switch input:checked + .toggle-slider:before {
   transform: translateX(24px);
 }
+
+/* Payments table */
+.payments-title {
+    text-align: center;
+    color: #e67e22;
+    font-size: 1.15em;
+    margin: 18px 0 4px 0;
+    font-weight: 700;
+}
+#payments-table {
+    margin-top: 6px;
+}
+#total-pagos {
+    font-size: 1.08em;
+    font-weight: 600;
+    color: #fff;
+    margin: 2px 0;
+    text-align: center;
+}
+#total-pagos b {
+    color: #e67e22;
+}
+.payments-total-row {
+    background: rgba(230, 126, 34, 0.12) !important;
+    border-top: 1.5px solid rgba(230, 126, 34, 0.3);
+}
+.payments-total-row b {
+    color: #e67e22;
+}

@@ -55,9 +55,11 @@ document.addEventListener('paste', function(e) {
 function procesarTextoLog(text, fileName) {
     const lines = text.split('\n');
     const sales = [];
+    const payments = [];
     let total = 0;
     const regexVenta = /Has vendido (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
     const regexCompra = /Has comprado (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
+    const regexPago = /\(!\) Has enviado \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) a (.+)\./;
     lines.forEach(line => {
         let match = line.match(regexVenta);
         if (match) {
@@ -77,19 +79,33 @@ function procesarTextoLog(text, fileName) {
             const valor = parseFloat(valorStr);
             sales.push({ tipo: 'Compra', cantidad, item, valor });
             total -= valor;
+            return;
+        }
+        match = line.match(regexPago);
+        if (match) {
+            const valorStr = match[1].replace(/\./g, '').replace(',', '.');
+            const valor = parseFloat(valorStr);
+            const destinatario = match[2];
+            payments.push({ destinatario, valor });
         }
     });
-    mostrarResultados(sales, total, fileName);
+    mostrarResultados(sales, total, fileName, payments);
 }
 
-function mostrarResultados(sales, total, fileName) {
-    if (sales.length === 0) {
-        document.getElementById('results').innerHTML = '<p>No se encontraron ventas ni compras en el archivo.</p>';
+function mostrarResultados(sales, total, fileName, payments) {
+    payments = payments || [];
+    if (sales.length === 0 && payments.length === 0) {
+        document.getElementById('results').innerHTML = '<p>No se encontraron ventas, compras ni pagos en el archivo.</p>';
         return;
     }
     // Calcular totales separados
     const totalVentas = sales.filter(s => s.tipo === 'Venta').reduce((acc, s) => acc + s.valor, 0);
     const totalCompras = sales.filter(s => s.tipo === 'Compra').reduce((acc, s) => acc + s.valor, 0);
+    const totalPagos = payments.reduce((acc, p) => acc + p.valor, 0);
+    // The base shop total before payments (ventas - compras)
+    const shopTotal = total;
+    // Subtract payments from total
+    total -= totalPagos;
     // Check for split query parameter (percentage, comma-separated for multiple)
     const urlParams = new URLSearchParams(window.location.search);
     const splitRaw = urlParams.get('split');
@@ -97,7 +113,8 @@ function mostrarResultados(sales, total, fileName) {
         ? splitRaw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0 && n <= 100)
         : [];
     const hasSplit = splits.length > 0;
-    const totalSplitAmount = splits.reduce((acc, pct) => acc + (total * pct / 100), 0);
+    // Commission is based on the shop total (ventas - compras), not affected by payments
+    const totalSplitAmount = splits.reduce((acc, pct) => acc + (shopTotal * pct / 100), 0);
     const totalAfterSplit = hasSplit ? (total - totalSplitAmount) : total;
     const hasCustomSplit = urlParams.get('customSplit') === 'true';
     let html = '';
@@ -108,15 +125,15 @@ function mostrarResultados(sales, total, fileName) {
         html += `<div id="total-compras"><b>Total compras:</b> -$${totalCompras.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     }
     if (hasSplit) {
-        if (!(totalVentas > 0 && totalCompras > 0)) {
+        if (!(totalVentas > 0 && totalCompras > 0) && !(totalPagos > 0)) {
             html += `<div class="totals-breakdown">`;
         }
         splits.forEach(pct => {
-            const amount = total * pct / 100;
+            const amount = shopTotal * pct / 100;
             html += `<div class="total-split"><b>Comisión (${pct}%):</b> -$${amount.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
         });
     }
-    if (totalVentas > 0 && totalCompras > 0 || hasSplit) {
+    if (totalVentas > 0 && totalCompras > 0 || hasSplit || totalPagos > 0) {
         html += `</div>`;
     }
     if (hasCustomSplit) {
@@ -128,6 +145,12 @@ function mostrarResultados(sales, total, fileName) {
                 <button type="button" id="customSplitUp" class="custom-split-btn">▼</button>
             </div>
         </div>`;
+    }
+    if (totalPagos > 0) {
+        if (!(totalVentas > 0 && totalCompras > 0)) {
+            html += `<div class="totals-breakdown">`;
+        }
+        html += `<div id="total-pagos"><b>Total pagos:</b> -$${totalPagos.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     }
     // Combinar transacciones por tipo+item y guardar detalles
     const combined = {};
@@ -164,6 +187,25 @@ function mostrarResultados(sales, total, fileName) {
         rowIdx++;
     });
     html += `</table>`;
+    // Payments table
+    if (payments.length > 0) {
+        // Combine payments by recipient
+        const combinedPayments = {};
+        payments.forEach(p => {
+            if (!combinedPayments[p.destinatario]) {
+                combinedPayments[p.destinatario] = { destinatario: p.destinatario, valor: 0, count: 0 };
+            }
+            combinedPayments[p.destinatario].valor += p.valor;
+            combinedPayments[p.destinatario].count += 1;
+        });
+        html += `<h3 class="payments-title">Pagos enviados</h3>`;
+        html += '<table id="payments-table"><tr><th>Destinatario</th><th>Envíos</th><th>Monto</th></tr>';
+        Object.values(combinedPayments).forEach(p => {
+            html += `<tr><td>${p.destinatario}</td><td>${p.count}</td><td>-$${p.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
+        });
+        // html += `<tr class="payments-total-row"><td colspan="2"><b>Total pagos</b></td><td><b>-$${totalPagos.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
+        html += `</table>`;
+    }
     html += `<div style="text-align:center;margin:10px 0 0 0;">
         <label class="toggle-switch" style="vertical-align:middle;">
             <input type="checkbox" id="toggleChests">
