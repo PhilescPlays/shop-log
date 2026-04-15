@@ -48,6 +48,9 @@ input[type="file"] {
     background: linear-gradient(90deg, #3a3fbb 0%, #6b70d6 100%);
     box-shadow: 0 4px 16px 0 rgba(78, 84, 200, 0.22);
 }
+#copyImageBtn {
+    margin-top: 16px;
+}
 /* Drag over full-page indicator */
 body.drag-over::after {
     content: '';
@@ -105,7 +108,8 @@ tr:nth-child(even) {
 .file-name {
     text-align: center;
     color: #bdbdbd;
-    font-size: 0.95em;
+    font-size: 1.6em;
+    font-weight: 700;
     margin-bottom: 8px;
     word-break: break-all;
 }
@@ -115,7 +119,7 @@ tr:nth-child(even) {
     align-items: center;
     margin-bottom: 4px;
 }
-#total-ventas, #total-compras {
+#total-ventas, #total-compras, #total-subastas {
     font-size: 1.08em;
     font-weight: 600;
     color: #fff;
@@ -127,6 +131,9 @@ tr:nth-child(even) {
 }
 #total-compras b {
     color: #e74c3c;
+}
+#total-subastas b {
+    color: #e67e22;
 }
 #total-compras {
     color: #fff;

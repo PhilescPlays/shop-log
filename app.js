@@ -56,10 +56,12 @@ function procesarTextoLog(text, fileName) {
     const lines = text.split('\n');
     const sales = [];
     const payments = [];
+    const auctions = [];
     let total = 0;
     const regexVenta = /Has vendido (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
     const regexCompra = /Has comprado (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
     const regexPago = /\(!\) Has enviado \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) a (.+)\./;
+    const regexSubasta = /SUBASTAS ▸ Compraste x(\d+) (?:▸ )?(.+) de (\S+) por (\d+(?:\.\d{3})*(?:,\d{2})?)\$/;
     lines.forEach(line => {
         let match = line.match(regexVenta);
         if (match) {
@@ -87,14 +89,25 @@ function procesarTextoLog(text, fileName) {
             const valor = parseFloat(valorStr);
             const destinatario = match[2];
             payments.push({ destinatario, valor });
+            return;
+        }
+        match = line.match(regexSubasta);
+        if (match) {
+            const cantidad = parseInt(match[1], 10);
+            const item = match[2];
+            const valorStr = match[4].replace(/\./g, '').replace(',', '.');
+            const valor = parseFloat(valorStr);
+            const vendedor = match[3];
+            auctions.push({ cantidad, item, valor, vendedor });
         }
     });
-    mostrarResultados(sales, total, fileName, payments);
+    mostrarResultados(sales, total, fileName, payments, auctions);
 }
 
-function mostrarResultados(sales, total, fileName, payments) {
+function mostrarResultados(sales, total, fileName, payments, auctions) {
     payments = payments || [];
-    if (sales.length === 0 && payments.length === 0) {
+    auctions = auctions || [];
+    if (sales.length === 0 && payments.length === 0 && auctions.length === 0) {
         document.getElementById('results').innerHTML = '<p>No se encontraron ventas, compras ni pagos en el archivo.</p>';
         return;
     }
@@ -102,10 +115,12 @@ function mostrarResultados(sales, total, fileName, payments) {
     const totalVentas = sales.filter(s => s.tipo === 'Venta').reduce((acc, s) => acc + s.valor, 0);
     const totalCompras = sales.filter(s => s.tipo === 'Compra').reduce((acc, s) => acc + s.valor, 0);
     const totalPagos = payments.reduce((acc, p) => acc + p.valor, 0);
+    const totalSubastas = auctions.reduce((acc, a) => acc + a.valor, 0);
     // The base shop total before payments (ventas - compras)
     const shopTotal = total;
-    // Subtract payments from total
+    // Subtract payments and auctions from total
     total -= totalPagos;
+    total -= totalSubastas;
     // Check for split query parameter (percentage, comma-separated for multiple)
     const urlParams = new URLSearchParams(window.location.search);
     const splitRaw = urlParams.get('split');
@@ -133,7 +148,7 @@ function mostrarResultados(sales, total, fileName, payments) {
             html += `<div class="total-split"><b>Comisión (${pct}%):</b> -$${amount.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
         });
     }
-    if (totalVentas > 0 && totalCompras > 0 || hasSplit || totalPagos > 0) {
+    if (totalVentas > 0 && totalCompras > 0 || hasSplit || totalPagos > 0 || totalSubastas > 0) {
         html += `</div>`;
     }
     if (hasCustomSplit) {
@@ -147,10 +162,16 @@ function mostrarResultados(sales, total, fileName, payments) {
         </div>`;
     }
     if (totalPagos > 0) {
-        if (!(totalVentas > 0 && totalCompras > 0)) {
+        if (!(totalVentas > 0 && totalCompras > 0) && !hasSplit) {
             html += `<div class="totals-breakdown">`;
         }
         html += `<div id="total-pagos"><b>Total pagos:</b> -$${totalPagos.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+    }
+    if (totalSubastas > 0) {
+        if (!(totalVentas > 0 && totalCompras > 0) && !hasSplit && !(totalPagos > 0)) {
+            html += `<div class="totals-breakdown">`;
+        }
+        html += `<div id="total-subastas"><b>Total subastas:</b> -$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     }
     // Combinar transacciones por tipo+item y guardar detalles
     const combined = {};
@@ -163,8 +184,13 @@ function mostrarResultados(sales, total, fileName, payments) {
         combined[key].valor += sale.valor;
         combined[key].detalles.push({ ...sale });
     });
+    // Show file name below title
+    const fileNameDisplay = document.getElementById('file-name-display');
     if (fileName) {
-        html += `<div class="file-name">📄 ${fileName}</div>`;
+        fileNameDisplay.textContent = fileName;
+        fileNameDisplay.style.display = '';
+    } else {
+        fileNameDisplay.style.display = 'none';
     }
     html += '<table id="results-table"><tr><th>Tipo</th><th>Objeto</th><th id="cantidad-header">Cantidad</th><th>Valor</th></tr>';
     let rowIdx = 0;
@@ -187,6 +213,25 @@ function mostrarResultados(sales, total, fileName, payments) {
         rowIdx++;
     });
     html += `</table>`;
+    // Auctions table
+    if (auctions.length > 0) {
+        const combinedAuctions = {};
+        auctions.forEach(a => {
+            const key = a.item + '|' + a.vendedor;
+            if (!combinedAuctions[key]) {
+                combinedAuctions[key] = { item: a.item, vendedor: a.vendedor, cantidad: 0, valor: 0 };
+            }
+            combinedAuctions[key].cantidad += a.cantidad;
+            combinedAuctions[key].valor += a.valor;
+        });
+        html += `<h3 class="payments-title">Subastas</h3>`;
+        html += '<table id="auctions-table"><tr><th>Objeto</th><th id="auction-cantidad-header">Cantidad</th><th>Vendedor</th><th>Precio</th></tr>';
+        Object.values(combinedAuctions).forEach(a => {
+            html += `<tr><td>${a.item}</td><td class="cantidad-cell" data-cantidad="${a.cantidad}">${a.cantidad}</td><td>${a.vendedor}</td><td>-$${a.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
+        });
+        // html += `<tr class="payments-total-row"><td colspan="3"><b>Total subastas</b></td><td><b>-$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
+        html += `</table>`;
+    }
     // Payments table
     if (payments.length > 0) {
         // Combine payments by recipient
@@ -214,6 +259,44 @@ function mostrarResultados(sales, total, fileName, payments) {
         <span style="vertical-align:middle;">Cantidades en Shulkers</span>
     </div>`;
     document.getElementById('results').innerHTML = html;
+    // Hide tutorial text and file upload, show copy-image button
+    document.querySelector('.container > p').style.display = 'none';
+    document.getElementById('fileUploadLabel').style.display = 'none';
+    const copyBtn = document.getElementById('copyImageBtn');
+    copyBtn.style.display = '';
+    copyBtn.textContent = 'Copiar imagen';
+    // Remove old listener by replacing node
+    const newCopyBtn = copyBtn.cloneNode(true);
+    copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+    newCopyBtn.addEventListener('click', async function() {
+        const container = document.querySelector('.container');
+        // Hide elements that shouldn't appear in the image
+        const tutorialText = container.querySelector('p');
+        const btnSelf = document.getElementById('copyImageBtn');
+        if (tutorialText) tutorialText.style.display = 'none';
+        if (btnSelf) btnSelf.style.display = 'none';
+        try {
+            const canvas = await html2canvas(container, { backgroundColor: '#282c34', scale: 2 });
+            canvas.toBlob(async (blob) => {
+                try {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': blob })
+                    ]);
+                    newCopyBtn.textContent = '¡Copiado!';
+                    setTimeout(() => { newCopyBtn.textContent = 'Copiar imagen'; }, 2000);
+                } catch {
+                    newCopyBtn.textContent = 'Error al copiar';
+                    setTimeout(() => { newCopyBtn.textContent = 'Copiar imagen'; }, 2000);
+                }
+            }, 'image/png');
+        } catch {
+            newCopyBtn.textContent = 'Error al capturar';
+            setTimeout(() => { newCopyBtn.textContent = 'Copiar imagen'; }, 2000);
+        } finally {
+            // Restore hidden elements (except tutorial text, already removed)
+            if (btnSelf) btnSelf.style.display = '';
+        }
+    });
     // Add click handlers for expandable rows
     document.querySelectorAll('.expandable-row').forEach(row => {
         row.addEventListener('click', function() {
@@ -235,9 +318,13 @@ function mostrarResultados(sales, total, fileName, payments) {
             if (checked) {
                 cell.textContent = (cantidad / 1728).toFixed(2);
                 document.getElementById('cantidad-header').textContent = 'Shulkers';
+                const auctionHeader = document.getElementById('auction-cantidad-header');
+                if (auctionHeader) auctionHeader.textContent = 'Shulkers';
             } else {
                 cell.textContent = cantidad;
                 document.getElementById('cantidad-header').textContent = 'Cantidad';
+                const auctionHeader = document.getElementById('auction-cantidad-header');
+                if (auctionHeader) auctionHeader.textContent = 'Cantidad';
             }
         });
         // Details
