@@ -60,6 +60,8 @@ function procesarTextoLog(text, fileName) {
     let total = 0;
     const regexVenta = /Has vendido (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
     const regexCompra = /Has comprado (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
+    const regexVentaAlt = /Has vendido x(\d+) (.+?) por \$(\d+)/;
+    const regexCompraAlt = /Has comprado x(\d+) (.+?) por \$(\d+)/;
     const regexPago = /\(!\) Has enviado \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) a (.+)\./;
     const regexSubasta = /SUBASTAS ▸ Compraste x(\d+) (?:▸ )?(.+) de (\S+) por (\d+(?:\.\d{3})*(?:,\d{2})?)\$/;
     lines.forEach(line => {
@@ -73,12 +75,30 @@ function procesarTextoLog(text, fileName) {
             total += valor;
             return;
         }
+        match = line.match(regexVentaAlt);
+        if (match) {
+            const cantidad = parseInt(match[1], 10);
+            const item = match[2];
+            const valor = parseFloat(match[3]);
+            sales.push({ tipo: 'Venta', cantidad, item, valor });
+            total += valor;
+            return;
+        }
         match = line.match(regexCompra);
         if (match) {
             const cantidad = parseInt(match[1], 10);
             const item = match[2];
             const valorStr = match[3].replace(/\./g, '').replace(',', '.');
             const valor = parseFloat(valorStr);
+            sales.push({ tipo: 'Compra', cantidad, item, valor });
+            total -= valor;
+            return;
+        }
+        match = line.match(regexCompraAlt);
+        if (match) {
+            const cantidad = parseInt(match[1], 10);
+            const item = match[2];
+            const valor = parseFloat(match[3]);
             sales.push({ tipo: 'Compra', cantidad, item, valor });
             total -= valor;
             return;
