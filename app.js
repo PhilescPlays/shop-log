@@ -63,6 +63,7 @@ function procesarTextoLog(text, fileName) {
     const regexVentaAlt = /Has vendido x(\d+) (.+?) por \$(\d+)/;
     const regexCompraAlt = /Has comprado x(\d+) (.+?) por \$(\d+)/;
     const regexPago = /\(!\) Has enviado \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) a (.+)\./;
+    const regexRecibido = /Has recibido (\d+) de (.+)\./;
     const regexSubasta = /SUBASTAS ▸ Compraste x(\d+) (?:▸ )?(.+) de (\S+) por (\d+(?:\.\d{3})*(?:,\d{2})?)\$/;
     lines.forEach(line => {
         let match = line.match(regexVenta);
@@ -101,6 +102,13 @@ function procesarTextoLog(text, fileName) {
             const valor = parseFloat(match[3]);
             sales.push({ tipo: 'Compra', cantidad, item, valor });
             total -= valor;
+            return;
+        }
+        match = line.match(regexRecibido);
+        if (match) {
+            const cantidad = parseInt(match[1], 10);
+            const item = match[2];
+            sales.push({ tipo: 'Compra', cantidad, item, valor: 10000 });
             return;
         }
         match = line.match(regexPago);
