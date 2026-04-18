@@ -1,19 +1,35 @@
-async function processFile(file) {
-    if (!file) return;
-    let text;
+async function readFileText(file) {
     if (file.name.endsWith('.gz')) {
         const ds = new DecompressionStream('gzip');
         const decompressedStream = file.stream().pipeThrough(ds);
         const decompressedBlob = await new Response(decompressedStream).blob();
-        text = await decompressedBlob.text();
-    } else {
-        text = await file.text();
+        return decompressedBlob.text();
     }
-    procesarTextoLog(text, file.name);
+    return file.text();
+}
+
+async function processFiles(files) {
+    if (!files || files.length === 0) return;
+    const name = files.length === 1 ? files[0].name : `${files.length} archivos`;
+    const allSales = [];
+    const allPayments = [];
+    const allReceived = [];
+    const allAuctions = [];
+    let allTotal = 0;
+    for (const file of Array.from(files)) {
+        const text = await readFileText(file);
+        const result = parsearTextoLog(text);
+        allSales.push(...result.sales);
+        allPayments.push(...result.payments);
+        allReceived.push(...result.received);
+        allAuctions.push(...result.auctions);
+        allTotal += result.total;
+    }
+    mostrarResultados(allSales, allTotal, name, allPayments, allAuctions, allReceived);
 }
 
 document.getElementById('logFile').addEventListener('change', function(event) {
-    processFile(event.target.files[0]);
+    processFiles(event.target.files);
 });
 
 document.querySelector('.custom-file-upload').addEventListener('click', function(e) {
@@ -37,9 +53,8 @@ document.addEventListener('dragleave', function(e) {
 document.addEventListener('drop', function(e) {
     e.preventDefault();
     document.body.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) {
-        processFile(file);
+    if (e.dataTransfer.files.length > 0) {
+        processFiles(e.dataTransfer.files);
     }
 });
 
@@ -52,10 +67,11 @@ document.addEventListener('paste', function(e) {
     }
 });
 
-function procesarTextoLog(text, fileName) {
+function parsearTextoLog(text) {
     const lines = text.split('\n');
     const sales = [];
     const payments = [];
+    const received = [];
     const auctions = [];
     let total = 0;
     const regexVenta = /Has vendido (\d+) de (.+?) por \$(\d{1,3}(?:\.\d{3})*,\d{2})/;
@@ -63,7 +79,8 @@ function procesarTextoLog(text, fileName) {
     const regexVentaAlt = /Has vendido x(\d+) (.+?) por \$(\d+)/;
     const regexCompraAlt = /Has comprado x(\d+) (.+?) por \$(\d+)/;
     const regexPago = /\(!\) Has enviado \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) a (.+)\./;
-    const regexRecibido = /Has recibido (\d+) de (.+)\./;
+    const regexRecibido = /\(!\) Has recibido \$(\d{1,3}(?:\.\d{3})*(?:,\d{2})?) de (.+)\./;
+    const regexAscensor = /Has recibido (\d+) de (.+)\./;
     const regexSubasta = /SUBASTAS ▸ Compraste x(\d+) (?:▸ )?(.+) de (\S+) por (\d+(?:\.\d{3})*(?:,\d{2})?)\$/;
     lines.forEach(line => {
         let match = line.match(regexVenta);
@@ -106,9 +123,19 @@ function procesarTextoLog(text, fileName) {
         }
         match = line.match(regexRecibido);
         if (match) {
+            const valorStr = match[1].replace(/\./g, '').replace(',', '.');
+            const valor = parseFloat(valorStr);
+            const remitente = match[2];
+            received.push({ remitente, valor });
+            total += valor;
+            return;
+        }
+        match = line.match(regexAscensor);
+        if (match) {
             const cantidad = parseInt(match[1], 10);
             const item = match[2];
-            sales.push({ tipo: 'Compra', cantidad, item, valor: 10000 });
+            sales.push({ tipo: 'Compra', cantidad, item, valor: 10000 * cantidad });
+            total -= 10000 * cantidad;
             return;
         }
         match = line.match(regexPago);
@@ -129,13 +156,19 @@ function procesarTextoLog(text, fileName) {
             auctions.push({ cantidad, item, valor, vendedor });
         }
     });
-    mostrarResultados(sales, total, fileName, payments, auctions);
+    return { sales, total, payments, received, auctions };
 }
 
-function mostrarResultados(sales, total, fileName, payments, auctions) {
+function procesarTextoLog(text, fileName) {
+    const result = parsearTextoLog(text);
+    mostrarResultados(result.sales, result.total, fileName, result.payments, result.auctions, result.received);
+}
+
+function mostrarResultados(sales, total, fileName, payments, auctions, received) {
     payments = payments || [];
     auctions = auctions || [];
-    if (sales.length === 0 && payments.length === 0 && auctions.length === 0) {
+    received = received || [];
+    if (sales.length === 0 && payments.length === 0 && auctions.length === 0 && received.length === 0) {
         document.getElementById('results').innerHTML = '<p>No se encontraron ventas, compras ni pagos en el archivo.</p>';
         return;
     }
@@ -144,8 +177,9 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
     const totalCompras = sales.filter(s => s.tipo === 'Compra').reduce((acc, s) => acc + s.valor, 0);
     const totalPagos = payments.reduce((acc, p) => acc + p.valor, 0);
     const totalSubastas = auctions.reduce((acc, a) => acc + a.valor, 0);
+    const totalRecibido = received.reduce((acc, r) => acc + r.valor, 0);
     // The base shop total before payments (ventas - compras)
-    const shopTotal = total;
+    const shopTotal = total - totalRecibido;
     // Subtract payments and auctions from total
     total -= totalPagos;
     total -= totalSubastas;
@@ -176,7 +210,7 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
             html += `<div class="total-split"><b>Comisión (${pct}%):</b> -$${amount.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
         });
     }
-    if (totalVentas > 0 && totalCompras > 0 || hasSplit || totalPagos > 0 || totalSubastas > 0) {
+    if (totalVentas > 0 && totalCompras > 0 || hasSplit || totalPagos > 0 || totalSubastas > 0 || totalRecibido > 0) {
         html += `</div>`;
     }
     if (hasCustomSplit) {
@@ -201,6 +235,12 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
         }
         html += `<div id="total-subastas"><b>Total subastas:</b> -$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
     }
+    if (totalRecibido > 0) {
+        if (!(totalVentas > 0 && totalCompras > 0) && !hasSplit && !(totalPagos > 0) && !(totalSubastas > 0)) {
+            html += `<div class="totals-breakdown">`;
+        }
+        html += `<div id="total-recibido"><b>Total recibido:</b> $${totalRecibido.toLocaleString('es-ES', {minimumFractionDigits: 2})}</div>`;
+    }
     // Combinar transacciones por tipo+item y guardar detalles
     const combined = {};
     sales.forEach((sale, idx) => {
@@ -222,7 +262,7 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
     }
     html += '<table id="results-table"><tr><th>Tipo</th><th>Objeto</th><th id="cantidad-header">Cantidad</th><th>Valor</th></tr>';
     let rowIdx = 0;
-    Object.entries(combined).forEach(([key, sale]) => {
+    Object.entries(combined).sort((a, b) => Math.abs(b[1].valor) - Math.abs(a[1].valor)).forEach(([key, sale]) => {
         const sign = sale.tipo === 'Compra' ? '-' : '';
         const rowId = `row-${rowIdx}`;
         html += `<tr class="expandable-row" data-row="${rowId}" style="cursor:pointer;">
@@ -240,6 +280,7 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
         </tr>`;
         rowIdx++;
     });
+    html += `<tr class="payments-total-row"><td colspan="3"><b>Total tienda</b></td><td><b>$${shopTotal.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
     html += `</table>`;
     // Auctions table
     if (auctions.length > 0) {
@@ -254,29 +295,60 @@ function mostrarResultados(sales, total, fileName, payments, auctions) {
         });
         html += `<h3 class="payments-title">Subastas</h3>`;
         html += '<table id="auctions-table"><tr><th>Objeto</th><th id="auction-cantidad-header">Cantidad</th><th>Vendedor</th><th>Precio</th></tr>';
-        Object.values(combinedAuctions).forEach(a => {
+        Object.values(combinedAuctions).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).forEach(a => {
             html += `<tr><td>${a.item}</td><td class="cantidad-cell" data-cantidad="${a.cantidad}">${a.cantidad}</td><td>${a.vendedor}</td><td>-$${a.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
         });
-        // html += `<tr class="payments-total-row"><td colspan="3"><b>Total subastas</b></td><td><b>-$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
+        html += `<tr class="payments-total-row"><td colspan="3"><b>Total subastas</b></td><td><b>-$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
         html += `</table>`;
     }
-    // Payments table
-    if (payments.length > 0) {
-        // Combine payments by recipient
+    // Payments table (sent and received combined by person)
+    if (payments.length > 0 || received.length > 0) {
         const combinedPayments = {};
         payments.forEach(p => {
-            if (!combinedPayments[p.destinatario]) {
-                combinedPayments[p.destinatario] = { destinatario: p.destinatario, valor: 0, count: 0 };
+            const key = p.destinatario;
+            if (!combinedPayments[key]) {
+                combinedPayments[key] = { nombre: key, enviado: 0, recibido: 0, count: 0, detalles: [] };
             }
-            combinedPayments[p.destinatario].valor += p.valor;
-            combinedPayments[p.destinatario].count += 1;
+            combinedPayments[key].enviado += p.valor;
+            combinedPayments[key].count += 1;
+            combinedPayments[key].detalles.push({ tipo: 'Enviado', valor: p.valor });
         });
-        html += `<h3 class="payments-title">Pagos enviados</h3>`;
-        html += '<table id="payments-table"><tr><th>Destinatario</th><th>Envíos</th><th>Monto</th></tr>';
-        Object.values(combinedPayments).forEach(p => {
-            html += `<tr><td>${p.destinatario}</td><td>${p.count}</td><td>-$${p.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
+        received.forEach(r => {
+            const key = r.remitente;
+            if (!combinedPayments[key]) {
+                combinedPayments[key] = { nombre: key, enviado: 0, recibido: 0, count: 0, detalles: [] };
+            }
+            combinedPayments[key].recibido += r.valor;
+            combinedPayments[key].count += 1;
+            combinedPayments[key].detalles.push({ tipo: 'Recibido', valor: r.valor });
         });
-        // html += `<tr class="payments-total-row"><td colspan="2"><b>Total pagos</b></td><td><b>-$${totalPagos.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
+        html += `<h3 class="payments-title">Transferencias</h3>`;
+        html += '<table id="payments-table"><tr><th>Jugador</th><th>Envíos</th><th>Monto</th></tr>';
+        let payRowIdx = 0;
+        Object.values(combinedPayments).sort((a, b) => Math.abs(b.recibido - b.enviado) - Math.abs(a.recibido - a.enviado)).forEach(p => {
+            const payRowId = `pay-row-${payRowIdx}`;
+            const net = p.recibido - p.enviado;
+            const netSign = net < 0 ? '-' : '';
+            html += `<tr class="expandable-row" data-row="${payRowId}" style="cursor:pointer;">
+                <td>${p.nombre}</td><td>${p.count}</td><td>${netSign}$${Math.abs(net).toLocaleString('es-ES', {minimumFractionDigits: 2})}</td>
+            </tr>`;
+            if (p.detalles.length > 1) {
+                html += `<tr class="details-row" id="${payRowId}" style="display:none;background:rgba(60,60,80,0.18);">
+                    <td colspan="3">
+                        <ul style="margin:0 0 0 1em;padding:0;list-style:disc;">
+                            ${p.detalles.map(d => {
+                                const ds = d.tipo === 'Enviado' ? '-' : '';
+                                return `<li>${d.tipo}: ${ds}$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</li>`;
+                            }).join('')}
+                        </ul>
+                    </td>
+                </tr>`;
+            }
+            payRowIdx++;
+        });
+        const netTransfers = totalRecibido - totalPagos;
+        const netSign = netTransfers < 0 ? '-' : '';
+        html += `<tr class="payments-total-row"><td colspan="2"><b>Total transferencias</b></td><td><b>${netSign}$${Math.abs(netTransfers).toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
         html += `</table>`;
     }
     html += `<div style="text-align:center;margin:10px 0 0 0;">
