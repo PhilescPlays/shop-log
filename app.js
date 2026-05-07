@@ -16,16 +16,23 @@ async function processFiles(files) {
     const allReceived = [];
     const allAuctions = [];
     let allTotal = 0;
+    const multiFile = files.length > 1;
     for (const file of Array.from(files)) {
         const text = await readFileText(file);
         const result = parsearTextoLog(text);
+        if (multiFile) {
+            result.sales.forEach(s => s.archivo = file.name);
+            result.payments.forEach(p => p.archivo = file.name);
+            result.received.forEach(r => r.archivo = file.name);
+            result.auctions.forEach(a => a.archivo = file.name);
+        }
         allSales.push(...result.sales);
         allPayments.push(...result.payments);
         allReceived.push(...result.received);
         allAuctions.push(...result.auctions);
         allTotal += result.total;
     }
-    mostrarResultados(allSales, allTotal, name, allPayments, allAuctions, allReceived);
+    mostrarResultados(allSales, allTotal, name, allPayments, allAuctions, allReceived, multiFile);
 }
 
 document.getElementById('logFile').addEventListener('change', function(event) {
@@ -164,7 +171,7 @@ function procesarTextoLog(text, fileName) {
     mostrarResultados(result.sales, result.total, fileName, result.payments, result.auctions, result.received);
 }
 
-function mostrarResultados(sales, total, fileName, payments, auctions, received) {
+function mostrarResultados(sales, total, fileName, payments, auctions, received, multiFile) {
     payments = payments || [];
     auctions = auctions || [];
     received = received || [];
@@ -273,7 +280,8 @@ function mostrarResultados(sales, total, fileName, payments, auctions, received)
                 <ul style="margin:0 0 0 1em;padding:0;list-style:disc;">
                     ${sale.detalles.map(d => {
                         const dsign = d.tipo === 'Compra' ? '-' : '';
-                        return `<li class="detalle-cantidad" data-cantidad="${d.cantidad}">${d.tipo} - <span class="detalle-cantidad-val">${d.cantidad}</span> x ${d.item} por ${dsign}$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</li>`;
+                        const fileTag = multiFile && d.archivo ? ` <span class="detalle-archivo">[${d.archivo}]</span>` : '';
+                        return `<li class="detalle-cantidad" data-cantidad="${d.cantidad}">${d.tipo} - <span class="detalle-cantidad-val">${d.cantidad}</span> x ${d.item} por ${dsign}$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}${fileTag}</li>`;
                     }).join('')}
                 </ul>
             </td>
@@ -288,15 +296,29 @@ function mostrarResultados(sales, total, fileName, payments, auctions, received)
         auctions.forEach(a => {
             const key = a.item + '|' + a.vendedor;
             if (!combinedAuctions[key]) {
-                combinedAuctions[key] = { item: a.item, vendedor: a.vendedor, cantidad: 0, valor: 0 };
+                combinedAuctions[key] = { item: a.item, vendedor: a.vendedor, cantidad: 0, valor: 0, detalles: [] };
             }
             combinedAuctions[key].cantidad += a.cantidad;
             combinedAuctions[key].valor += a.valor;
+            combinedAuctions[key].detalles.push({ ...a });
         });
         html += `<h3 class="payments-title">Subastas</h3>`;
         html += '<table id="auctions-table"><tr><th>Objeto</th><th id="auction-cantidad-header">Cantidad</th><th>Vendedor</th><th>Precio</th></tr>';
+        let auctionRowIdx = 0;
         Object.values(combinedAuctions).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).forEach(a => {
-            html += `<tr><td>${a.item}</td><td class="cantidad-cell" data-cantidad="${a.cantidad}">${a.cantidad}</td><td>${a.vendedor}</td><td>-$${a.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
+            const auctionRowId = `auction-row-${auctionRowIdx}`;
+            html += `<tr class="expandable-row" data-row="${auctionRowId}" style="cursor:pointer;"><td>${a.item}</td><td class="cantidad-cell" data-cantidad="${a.cantidad}">${a.cantidad}</td><td>${a.vendedor}</td><td>-$${a.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</td></tr>`;
+            html += `<tr class="details-row" id="${auctionRowId}" style="display:none;background:rgba(60,60,80,0.18);">
+                <td colspan="4">
+                    <ul style="margin:0 0 0 1em;padding:0;list-style:disc;">
+                        ${a.detalles.map(d => {
+                            const fileTag = multiFile && d.archivo ? ` <span class="detalle-archivo">[${d.archivo}]</span>` : '';
+                            return `<li class="detalle-cantidad" data-cantidad="${d.cantidad}"><span class="detalle-cantidad-val">${d.cantidad}</span> x ${d.item} de ${d.vendedor} por -$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}${fileTag}</li>`;
+                        }).join('')}
+                    </ul>
+                </td>
+            </tr>`;
+            auctionRowIdx++;
         });
         html += `<tr class="payments-total-row"><td colspan="3"><b>Total subastas</b></td><td><b>-$${totalSubastas.toLocaleString('es-ES', {minimumFractionDigits: 2})}</b></td></tr>`;
         html += `</table>`;
@@ -311,7 +333,7 @@ function mostrarResultados(sales, total, fileName, payments, auctions, received)
             }
             combinedPayments[key].enviado += p.valor;
             combinedPayments[key].count += 1;
-            combinedPayments[key].detalles.push({ tipo: 'Enviado', valor: p.valor });
+            combinedPayments[key].detalles.push({ tipo: 'Enviado', valor: p.valor, archivo: p.archivo });
         });
         received.forEach(r => {
             const key = r.remitente;
@@ -320,7 +342,7 @@ function mostrarResultados(sales, total, fileName, payments, auctions, received)
             }
             combinedPayments[key].recibido += r.valor;
             combinedPayments[key].count += 1;
-            combinedPayments[key].detalles.push({ tipo: 'Recibido', valor: r.valor });
+            combinedPayments[key].detalles.push({ tipo: 'Recibido', valor: r.valor, archivo: r.archivo });
         });
         html += `<h3 class="payments-title">Transferencias</h3>`;
         html += '<table id="payments-table"><tr><th>Jugador</th><th>Envíos</th><th>Monto</th></tr>';
@@ -332,18 +354,17 @@ function mostrarResultados(sales, total, fileName, payments, auctions, received)
             html += `<tr class="expandable-row" data-row="${payRowId}" style="cursor:pointer;">
                 <td>${p.nombre}</td><td>${p.count}</td><td>${netSign}$${Math.abs(net).toLocaleString('es-ES', {minimumFractionDigits: 2})}</td>
             </tr>`;
-            if (p.detalles.length > 1) {
-                html += `<tr class="details-row" id="${payRowId}" style="display:none;background:rgba(60,60,80,0.18);">
-                    <td colspan="3">
-                        <ul style="margin:0 0 0 1em;padding:0;list-style:disc;">
-                            ${p.detalles.map(d => {
-                                const ds = d.tipo === 'Enviado' ? '-' : '';
-                                return `<li>${d.tipo}: ${ds}$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}</li>`;
-                            }).join('')}
-                        </ul>
-                    </td>
-                </tr>`;
-            }
+            html += `<tr class="details-row" id="${payRowId}" style="display:none;background:rgba(60,60,80,0.18);">
+                <td colspan="3">
+                    <ul style="margin:0 0 0 1em;padding:0;list-style:disc;">
+                        ${p.detalles.map(d => {
+                            const ds = d.tipo === 'Enviado' ? '-' : '';
+                            const fileTag = multiFile && d.archivo ? ` <span class="detalle-archivo">[${d.archivo}]</span>` : '';
+                            return `<li>${d.tipo}: ${ds}$${d.valor.toLocaleString('es-ES', {minimumFractionDigits: 2})}${fileTag}</li>`;
+                        }).join('')}
+                    </ul>
+                </td>
+            </tr>`;
             payRowIdx++;
         });
         const netTransfers = totalRecibido - totalPagos;
