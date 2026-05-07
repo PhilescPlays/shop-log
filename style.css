@@ -279,3 +279,8 @@ tr:nth-child(even) {
 .payments-total-row b {
     color: #8f94fb;
 }
+.detalle-archivo {
+    color: #8f94fb;
+    opacity: 0.7;
+    font-size: 0.9em;
+}
